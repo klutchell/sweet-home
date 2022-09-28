@@ -1,11 +1,41 @@
 ARG USER=me
 ARG UID=1000
+ARG MOSH_COMMIT=f3665fb99bffc5929193a204d8540d74749b52c3
 
 FROM nixos/nix as nix
 
 RUN mkdir -p /output/store && \
     nix-env --profile /output/profile --option filter-syscalls false -i home-manager nix && \
     cp -va $(nix-store -qR /output/profile) /output/store
+
+FROM alpine as mosh
+
+ARG MOSH_COMMIT
+
+RUN apk update && \
+  apk --no-cache add \
+  gzip \
+  curl \
+  autoconf \
+  automake \
+  build-base \
+  ncurses-dev \
+  ncurses-static \
+  openssh-client \
+  openssh-server \
+  openssl-dev \
+  openssl-libs-static \
+  perl-doc \
+  protobuf-dev \
+  zlib-static \
+  zlib-dev \
+  libutempter-dev
+
+RUN curl -SLO "https://github.com/mobile-shell/mosh/archive/${MOSH_COMMIT}.tar.gz" && \
+		tar xzf "${MOSH_COMMIT}.tar.gz" && \
+		cd mosh-${MOSH_COMMIT} && \
+        ./autogen.sh && LDFLAGS=-static ./configure && make && \
+        cp src/frontend/mosh-server /
 
 FROM alpine
 
@@ -20,6 +50,7 @@ RUN rm -rf /usr/local
 # Copy nix dependencies
 COPY --from=nix --chown=${UID} /output/store /nix/store
 COPY --from=nix /output/profile/ /usr/local/
+COPY --from=mosh /mosh-server /usr/bin/
 
 # Copy the version to be loaded as an env var
 COPY VERSION /etc/version
